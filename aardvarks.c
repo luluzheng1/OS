@@ -2,7 +2,7 @@
 #include "semaphore.h"
 #define TRUE 1
 #define FALSE 0
-
+#define NO_MORE_ANTS(h) (NUM_ANTS[h] <= 0 ? 1 : 0)
 int initialized = FALSE; // semaphores and mutexes are not initialized
 
 void my_slurp(char aname);
@@ -41,14 +41,15 @@ void *aardvark(void *input)
     }
     pthread_mutex_unlock(&init_lock);
 
+    // put some aardvarks to sleep first
+    if (aname % 2)
+    {
+        sleep(1);
+    }
     // now be an aardvark
     while (chow_time())
     {
-        // try to slurp
-        printf("Ants left at Hill 1: %d\n", NUM_ANTS[0]);
-        printf("Ants left at Hill 2: %d\n", NUM_ANTS[1]);
-        printf("Ants left at Hill 3: %d\n", NUM_ANTS[2]);
-        my_slurp(aname); // identify self, slurp from first anthill
+        my_slurp(aname);
     }
 
     return NULL;
@@ -56,36 +57,34 @@ void *aardvark(void *input)
 
 void my_slurp(char aname)
 {
-    int hill, aardvark = aname - 'A';
+    int hill, count;
+    int aardvark = aname - 'A';
     pthread_t swallow;
 
     hill = next_hill(aardvark);
-    if (NUM_ANTS[hill] <= 0)
-    {
+    if (NO_MORE_ANTS(hill))
         return;
-    }
+
     // check if that hill is available
     while (sem_trywait(&sems[hill]) == -1)
     {
-        // go to a new hill
+        // go to a new hill if not
         hill = next_hill(aardvark);
-        if (NUM_ANTS[hill] <= 0)
-        {
+        if (NO_MORE_ANTS(hill))
             return;
-        }
     }
 
+    // unlock hill after slurping
     pthread_create(&swallow, NULL, &slurp_time, &hill);
 
-    if (decrement_ant_count(aardvark, hill))
+    if (decrement_ant_count(aardvark, hill) <= 0)
         return;
 
+    // slurp failed, undo decrement
     if (slurp(aname, hill) == 0)
         NUM_ANTS[hill]++;
 
     pthread_join(swallow, NULL);
-    // unlock the sem
-    // sem_post(&sems[hill]);
     return;
 }
 
@@ -102,8 +101,8 @@ int next_hill(int aardvark)
 {
     pthread_mutex_lock(&mutex[aardvark]);
     int hill = HILLS[curr_hill % 3];
-    curr_hill++;
     pthread_mutex_unlock(&mutex[aardvark]);
+    curr_hill++;
 
     return hill;
 }
@@ -116,5 +115,4 @@ int decrement_ant_count(int aardvark, int hill)
 
     return count;
 }
-// Questions: Do we need to simulate any time that's taken up by swallow?
-// Not sure but it seems like slurp handles swalloe time in anthills.c.
+// currently averaging 56 seconds, what could I be doing better?
